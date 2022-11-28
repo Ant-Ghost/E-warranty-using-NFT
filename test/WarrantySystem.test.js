@@ -18,7 +18,14 @@ describe('Warranty System', function () {
 			expect(listingPrice.toString()).to.equal('50000000000000000');
 		});
 	});
-
+	describe('Check connection', function() {
+		it('Should check connection', async function() {
+			const contract = await loadFixture(deploymentFixture);
+			const signal = await contract.getSignal();
+			expect(signal.toString()).to.equal('Blockchain working');
+		});
+	});
+/*
 	describe('Check sender and owner', function () {
 		it('Has same sender and owner.', async function () {
 			const contract = await loadFixture(deploymentFixture);
@@ -376,4 +383,5 @@ describe('Warranty System', function () {
 			}
 		}).timeout(60000);
 	});
+*/
 });

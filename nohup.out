@@ -1,0 +1,13 @@
+An unexpected error occurred:
+
+Error: EACCES: permission denied, mkdir '/root/.config/hardhat-nodejs'
+    at Object.mkdirSync (node:fs:1395:3)
+    at Object.mkdirsSync (/home/ubuntu/E-warranty-using-NFT/node_modules/fs-extra/lib/mkdirs/mkdirs-sync.js:31:9)
+    at getConfigDirSync (/home/ubuntu/E-warranty-using-NFT/node_modules/hardhat/src/internal/util/global-dir.ts:22:6)
+    at hasConsentedTelemetry (/home/ubuntu/E-warranty-using-NFT/node_modules/hardhat/src/internal/util/global-dir.ts:104:21)
+    at main (/home/ubuntu/E-warranty-using-NFT/node_modules/hardhat/src/internal/cli/cli.ts:188:70) {
+  errno: -13,
+  syscall: 'mkdir',
+  code: 'EACCES',
+  path: '/root/.config/hardhat-nodejs'
+}

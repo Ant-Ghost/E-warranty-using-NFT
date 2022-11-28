@@ -17,6 +17,8 @@ contract WarrantySystem is ERC721URIStorage{
     mapping(uint256 => Product) private idToProduct;
     mapping(uint256 => string[]) private activityURIs;
 
+    string ipfsBaseURI = "";
+
     struct Product {
         uint256 tokenId;
         address payable seller;
@@ -40,10 +42,47 @@ contract WarrantySystem is ERC721URIStorage{
         string[] indexed arr
     );
 
+    function getTokenDetails(uint256 token) public view returns(address, address, uint256, bool, uint256, uint256, uint256, uint256) {
+	Product memory p =  idToProduct[token];
+	return (p.seller, p.owner, p.price, p.isSold, p.expiryDuration, p.expiryTime, p.secretKey, block.timestamp);
+    }
+
 
 
     constructor()  ERC721("Warranty Token","WARR"){
         owner = payable(msg.sender);
+    }
+
+    function setipfsBaseURI(string memory ipfsURI) public {
+        ipfsBaseURI = ipfsURI;
+    }
+
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        _requireMinted(tokenId);
+	require( block.timestamp<=idToProduct[tokenId].expiryTime, "Warranty expired!!!");
+
+        string memory _tokenURI = super.tokenURI(tokenId);
+        string memory base = ipfsBaseURI;
+
+        if (bytes(base).length == 0) {
+            return _tokenURI;
+        } else {
+            return string(abi.encodePacked(base, _tokenURI));
+        }
+    }
+
+    function getTokenURI(uint256 tokenId) public view returns (string memory, bool) {
+        _requireMinted(tokenId);
+	require( idToProduct[tokenId].expiryTime==0 || block.timestamp<=idToProduct[tokenId].expiryTime, "Warranty expired!!!");
+
+        string memory _tokenURI = super.tokenURI(tokenId);
+        string memory base = ipfsBaseURI;
+
+        if (bytes(base).length == 0) {
+            return (_tokenURI, idToProduct[tokenId].isSold);
+        } else {
+            return (string(abi.encodePacked(base, _tokenURI)), idToProduct[tokenId].isSold);
+        }
     }
 
     function getContractOwner() public view returns(address) {
@@ -69,12 +108,12 @@ contract WarrantySystem is ERC721URIStorage{
         return listingPrice;
     }
 
-    function mintToken(string memory tokenURI, uint256 price,uint256 expiryDuration, uint256 secretKey) public payable {
+    function mintToken(string memory ipfsHash, uint256 price,uint256 expiryDuration, uint256 secretKey) public payable {
         _tokenIds.increment();
         uint256 newTokenId = _tokenIds.current();
 
         _mint(msg.sender, newTokenId);
-        _setTokenURI(newTokenId, tokenURI);
+        _setTokenURI(newTokenId, ipfsHash);
         createProduct(newTokenId, price, expiryDuration, secretKey);
         // return newTokenId;
     }
@@ -126,15 +165,27 @@ contract WarrantySystem is ERC721URIStorage{
         payable(seller).transfer(msg.value);
     }
 
-    // modifier to check and burn the token
-    modifier checkAndBurnToken(uint256 tokenId) {
-        if(block.timestamp>=idToProduct[tokenId].expiryTime){
-            _burn(tokenId);
-            delete idToProduct[tokenId];
-            delete activityURIs[tokenId];
-            require(false, "Warranty Expired. Burning!!!");
-        }
-        _;
+    function burnExpiredToken(uint256 tokenId) public isMintedProduct(tokenId) returns(string memory){
+        require(idToProduct[tokenId].expiryTime!=0 || block.timestamp>=idToProduct[tokenId].expiryTime, "Warranty not yet expired!!!");
+        require(msg.sender == owner, "You are not the contract owner!!!");
+        // If tokenId is sold (expiryTime == 0) and expired anybody can delete the token.
+
+        _burn(tokenId);
+        delete idToProduct[tokenId];
+        delete activityURIs[tokenId];
+
+        return "Token deleted!!";
+    }
+
+    function burnUnSoldProduct(uint256 tokenId) public isMintedProduct(tokenId) returns(string memory) {
+        require(idToProduct[tokenId].expiryTime==0, "Product Already sold");
+        require(idToProduct[tokenId].seller == msg.sender, "You are not the owner of this token!!!");
+        _burn(tokenId);
+        delete idToProduct[tokenId];
+        delete activityURIs[tokenId];
+
+        return "Token deleted!!";
+
     }
 
     modifier isMintedProduct(uint256 tokenId) {
@@ -142,21 +193,30 @@ contract WarrantySystem is ERC721URIStorage{
         _;
     }
 
-    function ownerShipProof(uint256 tokenId) public isMintedProduct(tokenId) checkAndBurnToken(tokenId) {
-        emit  BooleanValue(msg.sender == idToProduct[tokenId].owner);
+    function ownerShipProof(uint256 tokenId) public view isMintedProduct(tokenId) returns(bool){
+        require( block.timestamp<=idToProduct[tokenId].expiryTime, "Warranty expired!!!");
+        if(msg.sender == idToProduct[tokenId].owner){
+            return true;
+        }
+
+        return false;
     }
 
-    function isProductSold(uint256 tokenId) public isMintedProduct(tokenId) checkAndBurnToken(tokenId) {
-        emit  BooleanValue(idToProduct[tokenId].isSold);
+    function isProductSold(uint256 tokenId) public isMintedProduct(tokenId) view returns(bool) {
+        // emit  BooleanValue(idToProduct[tokenId].isSold);
+        require( block.timestamp<=idToProduct[tokenId].expiryTime, "Warranty expired!!!");
+        return idToProduct[tokenId].isSold;
     }
 
-    function getActivityLog(uint256 tokenId) public isMintedProduct(tokenId) checkAndBurnToken(tokenId) {
+    function getActivityLog(uint256 tokenId) public isMintedProduct(tokenId) {
+        require( block.timestamp<=idToProduct[tokenId].expiryTime, "Warranty expired!!!");
         require(_isApprovedOrOwner(msg.sender, tokenId), "Only creator or owner of the token can view the log");
 
         emit ArrayValue(activityURIs[tokenId]);
     }
 
-    function transferOwnershipOfProduct(address to, uint256 tokenId) public isMintedProduct(tokenId) checkAndBurnToken(tokenId) payable {
+    function transferOwnershipOfProduct(address to, uint256 tokenId) public isMintedProduct(tokenId) payable {
+        require( block.timestamp<=idToProduct[tokenId].expiryTime, "Warranty expired!!!");
         require(msg.sender == idToProduct[tokenId].owner, "You are not the owner of this token!!");
         require(idToProduct[tokenId].isSold, "Product not yet sold!!!");
 
@@ -174,10 +234,12 @@ contract WarrantySystem is ERC721URIStorage{
         payable(seller).transfer(msg.value);
     }
 
-    function checkExpiryRemaining(uint256 tokenId) public isMintedProduct(tokenId) checkAndBurnToken(tokenId) {
+    function checkExpiryRemaining(uint256 tokenId) public view isMintedProduct(tokenId) returns(uint256){
+	require( idToProduct[tokenId].isSold==true, "Product unsold !!!");
+        require( block.timestamp<=idToProduct[tokenId].expiryTime, "Warranty expired!!!");
         require(_isApprovedOrOwner(msg.sender, tokenId), "Only creator or owner of the token can check Expiry time remaining");
-        emit IntegerValue(idToProduct[tokenId].expiryTime - block.timestamp); 
+        uint256 time = idToProduct[tokenId].expiryTime - block.timestamp;
+        return time;
     }
-
 
 }
